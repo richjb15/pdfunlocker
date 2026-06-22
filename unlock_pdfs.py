@@ -29,7 +29,11 @@ from googleapiclient.discovery import build
 # CONFIG — edit these values
 # ───────────────────────────────────────────────────────────
 SEARCH_QUERY = 'from:yourbank.co.za has:attachment filename:pdf'  # Gmail search syntax
-PDF_PASSWORD = "YOUR_PDF_PASSWORD_HERE"        # the password that unlocks the PDFs
+PDF_PASSWORDS = [
+    "YOUR_PDF_PASSWORD_HERE",
+    # "ANOTHER_PASSWORD",
+    # "YET_ANOTHER_PASSWORD",
+]        # the passwords that unlock the PDFs
 OUTPUT_FOLDER = "/home/claude/unlocked_pdfs"    # where unlocked PDFs are saved
 MAX_EMAILS = 20                                 # how many matching emails to check
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
