@@ -28,13 +28,18 @@ from googleapiclient.discovery import build
 # ───────────────────────────────────────────────────────────
 # CONFIG — edit these values
 # ───────────────────────────────────────────────────────────
-SEARCH_QUERY = 'from:yourbank.co.za has:attachment filename:pdf'  # Gmail search syntax
+SEARCH_QUERY = 'has:attachment filename:pdf'  # broadened: checks ALL PDF attachments
+
+# List every password that might unlock your PDFs — the script tries each
+# one in order until one works. Add as many as you need.
 PDF_PASSWORDS = [
-    "YOUR_PDF_PASSWORD_HERE",
-    # "ANOTHER_PASSWORD",
-    # "YET_ANOTHER_PASSWORD",
-]        # the passwords that unlock the PDFs
-OUTPUT_FOLDER = "/home/claude/unlocked_pdfs"    # where unlocked PDFs are saved
+    "x", # replace x with the one option of password
+    "y", # replace y with the one option of password
+    "z", # replace z with the one option of password
+]
+
+OUTPUT_FOLDER = "/Users/user/Documents/Scripts/Pdfunlocker/unlocked_pdfs"    # where unlocked PDFs are saved
+ONLY_SAVE_LOCKED_PDFS = True   # True = skip/ignore PDFs that weren't password-protected
 MAX_EMAILS = 20                                 # how many matching emails to check
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
 # ───────────────────────────────────────────────────────────
@@ -56,21 +61,39 @@ def get_gmail_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def unlock_pdf_bytes(pdf_bytes, password, out_path):
-    """Decrypt PDF bytes with the given password and save to out_path."""
+def unlock_pdf_bytes(pdf_bytes, passwords, out_path, only_save_locked=False):
+    """Try each password in the list until one decrypts the PDF. Save result to out_path.
+    Returns (saved: bool, was_locked: bool)."""
     import io
+
+    # First, check if it's even encrypted at all
     try:
-        with pikepdf.open(io.BytesIO(pdf_bytes), password=password) as pdf:
+        with pikepdf.open(io.BytesIO(pdf_bytes)) as pdf:
+            # Opened with no password — not encrypted
+            if only_save_locked:
+                return False, False
             pdf.save(out_path)
-        return True
+            return True, False
     except pikepdf.PasswordError:
-        print(f"  ✗ Wrong password for this PDF, skipping: {out_path}")
-        return False
-    except pikepdf._core.PdfError as e:
-        # Not actually encrypted, or already unlocked — just save as-is
+        pass  # it IS encrypted — proceed to try passwords below
+    except pikepdf._core.PdfError:
+        if only_save_locked:
+            return False, False
         with open(out_path, "wb") as f:
             f.write(pdf_bytes)
-        return True
+        return True, False
+
+    for pw in passwords:
+        try:
+            with pikepdf.open(io.BytesIO(pdf_bytes), password=pw) as pdf:
+                pdf.save(out_path)
+                print(f"    (unlocked with password: {pw!r})")
+                return True, True
+        except pikepdf.PasswordError:
+            continue  # try the next password
+
+    print(f"  ✗ None of the provided passwords worked, skipping: {out_path}")
+    return False, True
 
 
 def main():
@@ -89,6 +112,7 @@ def main():
 
     print(f"Found {len(messages)} matching email(s). Processing...")
     saved_count = 0
+    skipped_unlocked_count = 0
 
     for msg_meta in messages:
         msg_id = msg_meta["id"]
@@ -114,13 +138,22 @@ def main():
                 out_name = f"{safe_subject}_{filename}"
                 out_path = os.path.join(OUTPUT_FOLDER, out_name)
 
-                print(f"  Unlocking: {filename}  (from: \"{subject}\")")
-                if unlock_pdf_bytes(file_data, PDF_PASSWORD, out_path):
+                print(f"  Checking: {filename}  (from: \"{subject}\")")
+                saved, was_locked = unlock_pdf_bytes(
+                    file_data, PDF_PASSWORDS, out_path, only_save_locked=ONLY_SAVE_LOCKED_PDFS
+                )
+                if saved:
                     print(f"  ✓ Saved unlocked copy: {out_path}")
                     saved_count += 1
+                elif not was_locked:
+                    print(f"    (not password-protected — skipped)")
+                    skipped_unlocked_count += 1
 
     print(f"\nDone. {saved_count} unlocked PDF(s) saved to {OUTPUT_FOLDER}")
+    if ONLY_SAVE_LOCKED_PDFS:
+        print(f"({skipped_unlocked_count} PDF(s) were not locked and were skipped)")
 
 
 if __name__ == "__main__":
     main()
+
